@@ -1,5 +1,5 @@
 /* Flyer Calendar service worker */
-const CACHE = 'flyercal-v1';
+const CACHE = 'flyercal-v2';
 const PRECACHE = [
   './',
   './index.html',
