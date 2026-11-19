@@ -28,10 +28,16 @@ h1{font-size:1.5rem;margin:0}
 .iconbtn{font:inherit;color:var(--ink);background:var(--card);border:1px solid var(--line);border-radius:10px;padding:8px 12px;cursor:pointer;flex-shrink:0}
 .list-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:22px 0 8px}
 .list-head h3{margin:0}
+.region{margin:0 0 12px}
+.region>label{margin:0;color:var(--ink);font-size:.9rem}
+.region select{display:block;width:100%;margin-top:6px;font:inherit;color:var(--ink);background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px 12px}
 .drop{display:block;border:2px dashed var(--line);border-radius:14px;padding:22px;text-align:center;background:var(--card);cursor:pointer}
 .drop.over{border-color:var(--acc);background:var(--soft)}
 .drop b{color:var(--acc)}
 .drop input{display:none}
+.checks{display:flex;flex-direction:column;gap:8px;margin-top:8px}
+.checks label{display:flex;align-items:center;gap:8px;margin:0;font-size:.95rem;color:var(--ink)}
+.checks input{width:auto}
 #status{margin:10px 0 0;font-size:.9rem;color:var(--mute)}
 #status div{padding:2px 0}
 .ok{color:#15803d}.bad{color:#b91c1c}
@@ -83,6 +89,17 @@ input[type=text],input[type=date],input[type=time],input[type=password]{width:10
   <p class="sub">Drop in flyer screenshots. Gemini reads the event and adds it to your calendar.</p>
   <div id="setup"></div>
   <div id="install"></div>
+  <div class="region">
+    <label for="regionSelect">Keep events in
+      <select id="regionSelect" aria-label="State or region filter">
+        <option value="mi">Michigan</option>
+        <option value="nc">North Carolina</option>
+        <option value="nj">New Jersey</option>
+        <option value="dmv">DMV (DC, Maryland)</option>
+        <option value="all">All of my regions</option>
+      </select>
+    </label>
+  </div>
   <label class="drop" id="drop">
     <input type="file" id="file" accept="image/*" multiple>
     <b>Choose screenshots</b> or drag them here
@@ -118,11 +135,14 @@ input[type=text],input[type=date],input[type=time],input[type=password]{width:10
 </dialog>
 
 <dialog id="settings">
-  <div style="font-weight:600">Gemini API key</div>
-  <p class="hint">Get a free key at <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">Google AI Studio</a>. Stored only on this device.</p>
+  <div style="font-weight:600">Settings</div>
+  <p class="hint">Get a free Gemini key at <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">Google AI Studio</a>. Stored only on this device.</p>
   <label>API key<input type="password" id="f-key" autocomplete="off" spellcheck="false" placeholder="AIza…"></label>
+  <div style="font-weight:600;margin-top:16px">My regions</div>
+  <p class="hint">Used when the filter is set to “All of my regions”.</p>
+  <div class="checks" id="regionChecks"></div>
   <div class="btns">
-    <button type="button" id="clearKey">Clear</button>
+    <button type="button" id="clearKey">Clear key</button>
     <button type="button" id="cancelSettings">Cancel</button>
     <button type="button" class="p" id="saveKey">Save</button>
   </div>
@@ -132,12 +152,73 @@ input[type=text],input[type=date],input[type=time],input[type=password]{width:10
 (function(){
   var KEY='flyercal:events';
   var API_KEY_STORE='flyercal:geminiKey';
+  var REGION_FILTER_STORE='flyercal:regionFilter';
+  var MY_REGIONS_STORE='flyercal:myRegions';
   var GEMINI_MODEL='gemini-3.5-flash-lite';
+  var REGIONS={
+    mi:{id:'mi',label:'Michigan',abbrevs:['MI'],names:['Michigan'],cities:['Detroit','Grand Rapids','Ann Arbor','Lansing','Flint','Kalamazoo','Dearborn','Royal Oak','Troy','Warren','Pontiac','Saginaw','Benton Harbor','Muskegon']},
+    nc:{id:'nc',label:'North Carolina',abbrevs:['NC'],names:['North Carolina'],cities:['Charlotte','Raleigh','Durham','Greensboro','Asheville','Wilmington','Winston-Salem','Chapel Hill','Cary','Fayetteville','Concord']},
+    nj:{id:'nj',label:'New Jersey',abbrevs:['NJ'],names:['New Jersey'],cities:['Newark','Jersey City','Hoboken','Princeton','Atlantic City','Trenton','Paterson','Elizabeth','New Brunswick','Asbury Park','Montclair','Morristown']},
+    dmv:{id:'dmv',label:'DMV (DC, Maryland)',abbrevs:['DC','MD'],names:['District of Columbia','Washington DC','Washington, DC','Maryland'],cities:['Washington','Baltimore','Bethesda','Silver Spring','Rockville','College Park','Annapolis','Bowie','Hyattsville','Takoma Park','Columbia','Germantown']}
+  };
   var events=[];
   try{events=JSON.parse(localStorage.getItem(KEY)||'[]')||[];}catch(e){events=[];}
   function persist(){try{localStorage.setItem(KEY,JSON.stringify(events));}catch(e){}}
   function getApiKey(){try{return localStorage.getItem(API_KEY_STORE)||'';}catch(e){return '';}}
   function setApiKey(v){try{if(v)localStorage.setItem(API_KEY_STORE,v);else localStorage.removeItem(API_KEY_STORE);}catch(e){}}
+  function getRegionFilter(){
+    try{
+      var v=localStorage.getItem(REGION_FILTER_STORE);
+      if(v&&(REGIONS[v]||v==='all'))return v;
+    }catch(e){}
+    return 'mi';
+  }
+  function setRegionFilter(v){try{localStorage.setItem(REGION_FILTER_STORE,v||'mi');}catch(e){}}
+  function getMyRegions(){
+    try{
+      var v=JSON.parse(localStorage.getItem(MY_REGIONS_STORE)||'null');
+      if(Array.isArray(v)&&v.length)return v.filter(function(id){return !!REGIONS[id];});
+    }catch(e){}
+    return ['mi','nc','nj','dmv'];
+  }
+  function setMyRegions(ids){try{localStorage.setItem(MY_REGIONS_STORE,JSON.stringify(ids));}catch(e){}}
+  function activeRegionIds(){
+    var f=getRegionFilter();
+    if(f==='all')return getMyRegions();
+    return REGIONS[f]?[f]:['mi'];
+  }
+  function locMatchesRegion(loc,region){
+    var s=String(loc||'').replace(/\s+/g,' ').trim();
+    if(!s)return false;
+    var up=s.toUpperCase();
+    var i,token,re;
+    for(i=0;i<region.names.length;i++){
+      if(up.indexOf(region.names[i].toUpperCase())>=0)return true;
+    }
+    for(i=0;i<region.abbrevs.length;i++){
+      token=region.abbrevs[i];
+      re=new RegExp('(^|[^A-Z])'+token+'([^A-Z]|$)');
+      if(re.test(up))return true;
+    }
+    for(i=0;i<region.cities.length;i++){
+      re=new RegExp('\\b'+region.cities[i].replace(/[.*+?^${}()|[\]\\]/g,'\\$&').replace(/-/g,'[- ]?')+'\\b','i');
+      if(re.test(s))return true;
+    }
+    return false;
+  }
+  function filterByRegions(list){
+    var ids=activeRegionIds(), kept=[], skipped=0;
+    list.forEach(function(ev){
+      var hit=ids.some(function(id){return locMatchesRegion(ev.location,REGIONS[id]);});
+      if(hit)kept.push(ev);else skipped++;
+    });
+    return {kept:kept,skipped:skipped};
+  }
+  function regionLabel(){
+    var f=getRegionFilter();
+    if(f==='all')return 'your regions';
+    return (REGIONS[f]&&REGIONS[f].label)||'Michigan';
+  }
 
   var now=new Date();
   var view=new Date(now.getFullYear(),now.getMonth(),1);
@@ -220,17 +301,38 @@ input[type=text],input[type=date],input[type=time],input[type=password]{width:10
     $('dlg').close();
   };
 
+  function syncRegionSelect(){
+    $('regionSelect').value=getRegionFilter();
+  }
+  function renderRegionChecks(){
+    var mine=getMyRegions(), html='';
+    Object.keys(REGIONS).forEach(function(id){
+      html+='<label><input type="checkbox" data-region="'+id+'"'+(mine.indexOf(id)>=0?' checked':'')+'> '+REGIONS[id].label+'</label>';
+    });
+    $('regionChecks').innerHTML=html;
+  }
+  $('regionSelect').onchange=function(){
+    setRegionFilter($('regionSelect').value);
+  };
   $('settingsBtn').onclick=function(){
     $('f-key').value=getApiKey();
+    renderRegionChecks();
     $('settings').showModal();
   };
   $('cancelSettings').onclick=function(){$('settings').close();};
   $('clearKey').onclick=function(){setApiKey('');$('f-key').value='';updateSetupBanner();};
   $('saveKey').onclick=function(){
     setApiKey($('f-key').value.trim());
+    var ids=[];
+    Array.prototype.forEach.call(document.querySelectorAll('#regionChecks input[data-region]'),function(el){
+      if(el.checked)ids.push(el.getAttribute('data-region'));
+    });
+    if(!ids.length)ids=['mi'];
+    setMyRegions(ids);
     $('settings').close();
     updateSetupBanner();
   };
+  syncRegionSelect();
 
   /* ---------- ICS export ---------- */
   function icsEscape(s){
@@ -373,6 +475,7 @@ input[type=text],input[type=date],input[type=time],input[type=password]{width:10
       '{"title":string,"date":"YYYY-MM-DD" or null,"start":"HH:MM" (24-hour) or null,"end":"HH:MM" or null,"location":string}. '+
       'If the flyer shows no year, use the next occurrence of that date on or after today. '+
       'For tour posters with multiple cities/dates, return one object per stop. '+
+      'Put city and state in location when shown (examples: "Detroit, MI", "Newark, New Jersey", "Washington, DC"). '+
       'Use null when unsure; never invent a date, time, or location. Prefer artist + show name for title when both appear.';
 
     var url='https://generativelanguage.googleapis.com/v1beta/models/'+GEMINI_MODEL+':generateContent?key='+encodeURIComponent(apiKey);
@@ -416,19 +519,23 @@ input[type=text],input[type=date],input[type=time],input[type=password]{width:10
       var row=line('Reading '+files[i].name+' with Gemini…');
       try{
         var blob=await shrink(files[i]);
-        var found=await readWithGemini(blob,apiKey),added=0;
-        found.forEach(function(x){
+        var found=await readWithGemini(blob,apiKey);
+        var filtered=filterByRegions(found), added=0;
+        filtered.kept.forEach(function(x){
           events.push({id:'e'+Date.now()+Math.random().toString(36).slice(2,6),title:x.title||'',date:x.date||'',start:x.start||'',end:x.end||'',location:x.location||''});
           added++;
         });
         if(added){
           persist();
           row.className='ok';
-          row.textContent='Added '+added+' event'+(added>1?'s':'')+' from '+files[i].name;
+          row.textContent='Added '+added+' event'+(added>1?'s':'')+' in '+regionLabel()+(filtered.skipped?' · skipped '+filtered.skipped+' elsewhere':'')+' from '+files[i].name;
           var dated=events.filter(function(e){return e.date;}).sort(sortEv);
           var last=dated[dated.length-1]||events[events.length-1];
           if(last&&last.date){var d=parseISO(last.date);view=new Date(d.getFullYear(),d.getMonth(),1);}
           sel=null;render();
+        }else if(found.length&&filtered.skipped){
+          row.className='bad';
+          row.textContent='Found '+found.length+' event'+(found.length>1?'s':'')+' but none in '+regionLabel()+'. Try another region above.';
         }else{
           row.className='bad';
           row.textContent='No event found in '+files[i].name+'.';
