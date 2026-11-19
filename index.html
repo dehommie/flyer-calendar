@@ -1,0 +1,379 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#c2410c">
+<meta name="color-scheme" content="light dark">
+<meta name="description" content="Read event flyers and add them to your calendar.">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="FlyerCal">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
+<title>Flyer Calendar</title>
+<style>
+:root{--bg:#faf8f5;--card:#fff;--ink:#1f1b16;--mute:#6f675d;--line:#e6e0d8;--acc:#c2410c;--acc-ink:#fff;--soft:#fdeee3;color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#161412;--card:#201d1a;--ink:#f3eee8;--mute:#a39a8e;--line:#34302b;--acc:#f97316;--acc-ink:#1a1008;--soft:#2e2118;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#161412;--card:#201d1a;--ink:#f3eee8;--mute:#a39a8e;--line:#34302b;--acc:#f97316;--acc-ink:#1a1008;--soft:#2e2118;color-scheme:dark}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif}
+main{max-width:720px;margin:0 auto;padding:20px 16px 48px}
+h1{font-size:1.5rem;margin:0 0 4px}
+.sub{color:var(--mute);margin:0 0 16px}
+.drop{display:block;border:2px dashed var(--line);border-radius:14px;padding:22px;text-align:center;background:var(--card);cursor:pointer}
+.drop.over{border-color:var(--acc);background:var(--soft)}
+.drop b{color:var(--acc)}
+.drop input{display:none}
+#status{margin:10px 0 0;font-size:.9rem;color:var(--mute)}
+#status div{padding:2px 0}
+.ok{color:#15803d}.bad{color:#b91c1c}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .ok{color:#4ade80}:root:not([data-theme="light"]) .bad{color:#f87171}}
+.cal{margin-top:22px;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:12px}
+.head{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
+.head h2{font-size:1.1rem;margin:0}
+button{font:inherit;color:var(--ink);background:transparent;border:1px solid var(--line);border-radius:8px;padding:6px 12px;cursor:pointer}
+button.p{background:var(--acc);color:var(--acc-ink);border-color:var(--acc)}
+.grid{display:grid;grid-template-columns:repeat(7,1fr);gap:2px;text-align:center}
+.dow{font-size:.72rem;color:var(--mute);padding:4px 0}
+.day{aspect-ratio:1;border-radius:8px;border:1px solid transparent;display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:.9rem;cursor:pointer;background:transparent;padding:0}
+.day.out{color:var(--mute);opacity:.45}
+.day.today{border-color:var(--acc)}
+.day.sel{background:var(--soft)}
+.dot{width:6px;height:6px;border-radius:50%;background:var(--acc);margin-top:3px}
+.dot.n{background:transparent}
+h3{font-size:1rem;margin:22px 0 8px}
+.ev{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px 12px;margin-bottom:8px;display:flex;gap:10px;align-items:flex-start;justify-content:space-between}
+.ev .t{font-weight:600}.ev .m{color:var(--mute);font-size:.88rem}
+.acts{display:flex;gap:6px;flex-shrink:0}
+.acts button{padding:4px 10px;font-size:.85rem}
+.empty{color:var(--mute);font-size:.92rem}
+dialog{border:1px solid var(--line);border-radius:14px;background:var(--card);color:var(--ink);padding:18px;width:min(92vw,400px)}
+dialog::backdrop{background:rgba(0,0,0,.45)}
+label{display:block;font-size:.82rem;color:var(--mute);margin-top:10px}
+input[type=text],input[type=date],input[type=time]{width:100%;font:inherit;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:8px}
+.row{display:flex;gap:10px}.row>div{flex:1}
+.btns{display:flex;gap:8px;justify-content:flex-end;margin-top:16px}
+#install{display:none;margin:0 0 14px;padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:var(--card);color:var(--mute);font-size:.9rem}
+#install.show{display:block}
+#install b{color:var(--ink)}
+@media (display-mode:standalone),(display-mode:fullscreen){#install{display:none!important}}
+</style>
+</head>
+<body>
+<main>
+  <h1>Flyer Calendar</h1>
+  <p class="sub">Drop in flyer screenshots. Text is read in your browser and added to the calendar.</p>
+  <div id="install"></div>
+  <label class="drop" id="drop">
+    <input type="file" id="file" accept="image/*" multiple>
+    <b>Choose screenshots</b> or drag them here
+  </label>
+  <div id="status"></div>
+
+  <div class="cal">
+    <div class="head">
+      <button id="prev" aria-label="Previous month">‹</button>
+      <h2 id="mt"></h2>
+      <button id="next" aria-label="Next month">›</button>
+    </div>
+    <div class="grid" id="grid"></div>
+  </div>
+
+  <h3 id="lt">Upcoming</h3>
+  <div id="list"></div>
+  <div id="undated"></div>
+</main>
+
+<dialog id="dlg">
+  <div id="dtitle" style="font-weight:600">Edit event</div>
+  <label>Title<input type="text" id="f-title"></label>
+  <label>Date<input type="date" id="f-date"></label>
+  <div class="row">
+    <div><label>Start<input type="time" id="f-start"></label></div>
+    <div><label>End<input type="time" id="f-end"></label></div>
+  </div>
+  <label>Location<input type="text" id="f-loc"></label>
+  <div class="btns"><button id="cancel">Cancel</button><button class="p" id="save">Save</button></div>
+</dialog>
+
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+<script>
+(function(){
+  var KEY='flyercal:events';
+  var events=[];
+  try{events=JSON.parse(localStorage.getItem(KEY)||'[]')||[];}catch(e){events=[];}
+  function persist(){try{localStorage.setItem(KEY,JSON.stringify(events));}catch(e){}}
+  var now=new Date();
+  var view=new Date(now.getFullYear(),now.getMonth(),1);
+  var sel=null, editing=null;
+  var $=function(id){return document.getElementById(id);};
+  function esc(s){return String(s==null?'':s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});}
+  function iso(d){return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
+  var today=iso(now);
+  function parseISO(s){var p=s.split('-');return new Date(+p[0],+p[1]-1,+p[2]);}
+  function fmtDate(s){return parseISO(s).toLocaleDateString(undefined,{weekday:'short',month:'short',day:'numeric',year:'numeric'});}
+  function fmtTime(t){if(!t)return '';var p=t.split(':'),h=+p[0],m=p[1];return ((h%12)||12)+(m==='00'?'':':'+m)+(h<12?' AM':' PM');}
+  function when(e){var t=fmtTime(e.start);if(t&&e.end)t+=' – '+fmtTime(e.end);return [e.date?fmtDate(e.date):'',t].filter(Boolean).join(' · ');}
+
+  function evHTML(e){
+    var meta=[when(e),e.location].filter(Boolean).join(' · ');
+    return '<div class="ev"><div><div class="t">'+esc(e.title||'Untitled event')+'</div><div class="m">'+esc(meta)+'</div></div>'+
+      '<div class="acts"><button data-edit="'+e.id+'">Edit</button><button data-del="'+e.id+'">Delete</button></div></div>';
+  }
+  function sortEv(a,b){return (a.date+(a.start||'')).localeCompare(b.date+(b.start||''));}
+
+  function render(){
+    $('mt').textContent=view.toLocaleDateString(undefined,{month:'long',year:'numeric'});
+    var g='';['S','M','T','W','T','F','S'].forEach(function(d){g+='<div class="dow">'+d+'</div>';});
+    var start=new Date(view.getFullYear(),view.getMonth(),1-view.getDay());
+    var has={};events.forEach(function(e){if(e.date)has[e.date]=1;});
+    for(var i=0;i<42;i++){
+      var d=new Date(start.getFullYear(),start.getMonth(),start.getDate()+i),k=iso(d);
+      var cls='day'+(d.getMonth()!==view.getMonth()?' out':'')+(k===today?' today':'')+(k===sel?' sel':'');
+      g+='<button class="'+cls+'" data-day="'+k+'">'+d.getDate()+'<span class="dot'+(has[k]?'':' n')+'"></span></button>';
+    }
+    $('grid').innerHTML=g;
+    var list=events.filter(function(e){return e.date;}).sort(sortEv);
+    if(sel){
+      $('lt').textContent=fmtDate(sel);
+      list=list.filter(function(e){return e.date===sel;});
+      $('list').innerHTML=list.length?list.map(evHTML).join(''):'<div class="empty">Nothing on this day. Tap the day again to see all upcoming events.</div>';
+    }else{
+      $('lt').textContent='Upcoming';
+      list=list.filter(function(e){return e.date>=today;});
+      $('list').innerHTML=list.length?list.map(evHTML).join(''):'<div class="empty">No events yet. Add a flyer above.</div>';
+    }
+    var und=events.filter(function(e){return !e.date;});
+    $('undated').innerHTML=und.length?'<h3>Needs a date</h3>'+und.map(evHTML).join(''):'';
+  }
+
+  $('grid').addEventListener('click',function(ev){
+    var b=ev.target.closest('[data-day]');if(!b)return;
+    var k=b.getAttribute('data-day');sel=(sel===k)?null:k;
+    var d=parseISO(k);if(d.getMonth()!==view.getMonth())view=new Date(d.getFullYear(),d.getMonth(),1);
+    render();
+  });
+  $('prev').onclick=function(){view=new Date(view.getFullYear(),view.getMonth()-1,1);render();};
+  $('next').onclick=function(){view=new Date(view.getFullYear(),view.getMonth()+1,1);render();};
+  document.addEventListener('click',function(ev){
+    var e=ev.target.closest('[data-edit]'),d=ev.target.closest('[data-del]');
+    if(e)openEdit(e.getAttribute('data-edit'));
+    if(d){var id=d.getAttribute('data-del');events=events.filter(function(x){return x.id!==id;});persist();render();}
+  });
+
+  function openEdit(id){
+    var e=events.filter(function(x){return x.id===id;})[0];if(!e)return;
+    editing=id;
+    $('f-title').value=e.title||'';$('f-date').value=e.date||'';
+    $('f-start').value=e.start||'';$('f-end').value=e.end||'';$('f-loc').value=e.location||'';
+    $('dlg').showModal();
+  }
+  $('cancel').onclick=function(){$('dlg').close();};
+  $('save').onclick=function(){
+    var e=events.filter(function(x){return x.id===editing;})[0];
+    if(e){e.title=$('f-title').value.trim();e.date=$('f-date').value;e.start=$('f-start').value;e.end=$('f-end').value;e.location=$('f-loc').value.trim();
+      persist();if(e.date){var d=parseISO(e.date);view=new Date(d.getFullYear(),d.getMonth(),1);}render();}
+    $('dlg').close();
+  };
+
+  /* ---------- flyer reading (local OCR) ---------- */
+  var MONTHS={january:0,jan:0,february:1,feb:1,march:2,mar:2,april:3,apr:3,may:4,june:5,jun:5,july:6,jul:6,august:7,aug:7,september:8,sept:8,sep:8,october:9,oct:9,november:10,nov:10,december:11,dec:11};
+  var MONTH_RE='(?:January|February|March|April|May|June|July|August|September|October|November|December|Jan|Feb|Mar|Apr|Jun|Jul|Aug|Sept?|Oct|Nov|Dec)';
+  var DOW_RE='(?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday|Mon|Tue|Wed|Thu|Fri|Sat|Sun)';
+
+  function shrink(file){
+    return new Promise(function(res){
+      var img=new Image(),url=URL.createObjectURL(file);
+      img.onload=function(){
+        var s=Math.min(1,1600/Math.max(img.width,img.height)),c=document.createElement('canvas');
+        c.width=Math.round(img.width*s);c.height=Math.round(img.height*s);
+        c.getContext('2d').drawImage(img,0,0,c.width,c.height);
+        URL.revokeObjectURL(url);
+        c.toBlob(function(b){res(b||file);},'image/jpeg',0.85);
+      };
+      img.onerror=function(){URL.revokeObjectURL(url);res(file);};
+      img.src=url;
+    });
+  }
+  function line(msg,cls){var d=document.createElement('div');d.className=cls||'';d.textContent=msg;$('status').appendChild(d);return d;}
+
+  function to24(h,m,ampm){
+    h=+h;m=m==null||m===''?0:+m;
+    if(ampm){
+      ampm=ampm.toLowerCase();
+      if(ampm.charAt(0)==='p'&&h<12)h+=12;
+      if(ampm.charAt(0)==='a'&&h===12)h=0;
+    }
+    return String(h).padStart(2,'0')+':'+String(m).padStart(2,'0');
+  }
+  function nextOccurrence(month,day,year){
+    var y=year!=null?year:now.getFullYear();
+    var d=new Date(y,month,day);
+    if(year==null&&iso(d)<today)d=new Date(y+1,month,day);
+    if(d.getMonth()!==month||d.getDate()!==day)return '';
+    return iso(d);
+  }
+  function parseTimeToken(s){
+    var m=String(s).trim().match(/^(\d{1,2})(?::(\d{2}))?\s*(a\.?m\.?|p\.?m\.?)?$/i);
+    if(!m)return '';
+    var h=+m[1],mm=m[2]||'0',ap=m[3];
+    if(!ap&&h>23)return '';
+    if(ap&&(h<1||h>12))return '';
+    if(!ap&&h>23)return '';
+    return to24(h,mm,ap);
+  }
+  function extractTimes(text){
+    var start='',end='';
+    var range=text.match(/(\d{1,2}(?::\d{2})?\s*(?:a\.?m\.?|p\.?m\.?)?)\s*[-–—to]+\s*(\d{1,2}(?::\d{2})?\s*(?:a\.?m\.?|p\.?m\.?)?)/i);
+    if(range){
+      var a=range[1],b=range[2];
+      if(!/a\.?m\.?|p\.?m\.?/i.test(a)&&/a\.?m\.?|p\.?m\.?/i.test(b))a=a+' '+b.match(/a\.?m\.?|p\.?m\.?/i)[0];
+      start=parseTimeToken(a);end=parseTimeToken(b);
+      return {start:start,end:end};
+    }
+    var single=text.match(/\b(\d{1,2}(?::\d{2})?\s*(?:a\.?m\.?|p\.?m\.?))\b/i);
+    if(single)start=parseTimeToken(single[1]);
+    return {start:start,end:end};
+  }
+  function extractDate(text){
+    var m,month,day,year;
+    m=text.match(new RegExp('\\b('+MONTH_RE+')\\.?\\s+(\\d{1,2})(?:st|nd|rd|th)?(?:,?\\s*((?:19|20)\\d{2}))?\\b','i'));
+    if(m){
+      month=MONTHS[m[1].toLowerCase().replace(/\.$/,'')];day=+m[2];year=m[3]?+m[3]:null;
+      return nextOccurrence(month,day,year);
+    }
+    m=text.match(new RegExp('\\b(\\d{1,2})(?:st|nd|rd|th)?\\s+('+MONTH_RE+')\\.?(?:,?\\s*((?:19|20)\\d{2}))?\\b','i'));
+    if(m){
+      day=+m[1];month=MONTHS[m[2].toLowerCase().replace(/\.$/,'')];year=m[3]?+m[3]:null;
+      return nextOccurrence(month,day,year);
+    }
+    m=text.match(/\b(\d{1,2})[\/\-.](\d{1,2})(?:[\/\-.]((?:19|20)?\d{2}))?\b/);
+    if(m){
+      month=+m[1]-1;day=+m[2];
+      year=m[3]?+m[3]:null;
+      if(year!=null&&year<100)year+=2000;
+      if(month>=0&&month<=11&&day>=1&&day<=31)return nextOccurrence(month,day,year);
+    }
+    m=text.match(/\b((?:19|20)\d{2})-(\d{2})-(\d{2})\b/);
+    if(m)return m[0];
+    return '';
+  }
+  function looksLikeNoise(s){
+    return !s||s.length<2||/^[\W\d]+$/.test(s)||/^(www\.|http|instagram|facebook|tiktok|@)/i.test(s);
+  }
+  function looksLikeDateOrTime(s){
+    return new RegExp('^\\s*(?:'+DOW_RE+'\\s*[·,|-]?\\s*)?(?:'+MONTH_RE+'|\\d{1,2}[\\/-]\\d{1,2})','i').test(s)
+      ||/\b\d{1,2}(?::\d{2})?\s*(?:a\.?m\.?|p\.?m\.?)\b/i.test(s)
+      ||/^\s*\d{1,2}(?::\d{2})?\s*[-–—to]/i.test(s);
+  }
+  function extractLocation(lines,full){
+    var i,m,l;
+    for(i=0;i<lines.length;i++){
+      l=lines[i];
+      m=l.match(/\b(?:at|@|venue|location)\s*[:\-]?\s*(.+)$/i);
+      if(m&&m[1].trim().length>2)return m[1].replace(/^the\s+/i,'').trim();
+    }
+    for(i=0;i<lines.length;i++){
+      l=lines[i];
+      if(/\d{1,5}\s+[A-Za-z].+\b(?:St|Street|Ave|Avenue|Rd|Road|Blvd|Boulevard|Dr|Drive|Ln|Lane|Way|Court|Ct)\b/i.test(l))return l.trim();
+      if(/\b(?:Hall|Center|Centre|Theatre|Theater|Church|Park|Museum|Library|Cafe|Café|Bar|Club|Arena|Stadium|Gallery|Plaza|Room)\b/i.test(l)
+        &&!looksLikeDateOrTime(l)&&l.length<80)return l.trim();
+    }
+    m=full.match(/\bat\s+([A-Z][\w'&]*(?:\s+[A-Z][\w'&]*){0,5})/);
+    return m?m[1].trim():'';
+  }
+  function parseFlyerText(text){
+    text=String(text||'').replace(/\r/g,'').replace(/[|]+/g,' ').replace(/[ \t]+/g,' ');
+    var lines=text.split('\n').map(function(l){return l.trim();}).filter(function(l){return l.length>1;});
+    var full=lines.join('\n');
+    var date=extractDate(full);
+    var times=extractTimes(full);
+    var location=extractLocation(lines,full);
+    var title='';
+    for(var i=0;i<lines.length;i++){
+      var l=lines[i];
+      if(looksLikeNoise(l)||looksLikeDateOrTime(l))continue;
+      if(/^(at|@|venue|location|doors|admission|free|rsvp|tickets?)\b/i.test(l))continue;
+      if(location&&l.toLowerCase()===location.toLowerCase())continue;
+      title=l.replace(/^[#*\-•\s]+/,'').trim();
+      break;
+    }
+    if(!title&&date)title='Untitled event';
+    if(!title&&!date)return [];
+    return [{title:title,date:date,start:times.start,end:times.end,location:location}];
+  }
+
+  async function ocrImage(blob,row){
+    if(typeof Tesseract==='undefined')throw new Error('OCR library failed to load. Check your network connection.');
+    var result=await Tesseract.recognize(blob,'eng',{
+      logger:function(m){
+        if(!row||m.status!=='recognizing text')return;
+        var pct=m.progress!=null?Math.round(m.progress*100):0;
+        row.textContent=row.dataset.base+' ('+pct+'%)';
+      }
+    });
+    return (result&&result.data&&result.data.text)||'';
+  }
+
+  async function handle(files){
+    files=Array.prototype.filter.call(files,function(f){return /^image\//.test(f.type);});
+    if(!files.length)return;
+    $('status').innerHTML='';
+    for(var i=0;i<files.length;i++){
+      var row=line('Reading '+files[i].name+'…');
+      row.dataset.base='Reading '+files[i].name+'…';
+      try{
+        var blob=await shrink(files[i]);
+        var text=await ocrImage(blob,row);
+        var found=parseFlyerText(text),added=0;
+        found.forEach(function(x){
+          if(!x||(!x.title&&!x.date))return;
+          events.push({id:'e'+Date.now()+Math.random().toString(36).slice(2,6),title:x.title||'',date:/^\d{4}-\d{2}-\d{2}$/.test(x.date||'')?x.date:'',start:x.start||'',end:x.end||'',location:x.location||''});
+          added++;
+        });
+        if(added){persist();row.className='ok';row.textContent='Added '+added+' event'+(added>1?'s':'')+' from '+files[i].name;
+          var last=events[events.length-1];if(last.date){var d=parseISO(last.date);view=new Date(d.getFullYear(),d.getMonth(),1);}sel=null;render();}
+        else{row.className='bad';row.textContent='No event found in '+files[i].name+'. Try a clearer screenshot.';}
+      }catch(err){
+        row.className='bad';
+        row.textContent=(err&&err.message)||('Couldn’t read '+files[i].name+'. Try again.');
+      }
+    }
+  }
+  $('file').addEventListener('change',function(e){handle(e.target.files);e.target.value='';});
+  var drop=$('drop');
+  ['dragenter','dragover'].forEach(function(n){drop.addEventListener(n,function(e){e.preventDefault();drop.classList.add('over');});});
+  ['dragleave','drop'].forEach(function(n){drop.addEventListener(n,function(e){e.preventDefault();drop.classList.remove('over');});});
+  drop.addEventListener('drop',function(e){handle(e.dataTransfer.files);});
+
+  /* ---------- PWA install hint ---------- */
+  (function(){
+    var el=$('install');
+    var standalone=window.matchMedia('(display-mode: standalone)').matches
+      || window.navigator.standalone===true;
+    if(standalone)return;
+    var isIOS=/iPad|iPhone|iPod/.test(navigator.userAgent)||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1);
+    var isAndroid=/Android/i.test(navigator.userAgent);
+    if(isIOS){
+      el.innerHTML='<b>Add to Home Screen</b> — tap Share, then “Add to Home Screen” for the app icon.';
+      el.className='show';
+    }else if(isAndroid){
+      el.innerHTML='<b>Install app</b> — use Chrome’s menu → “Install app” or “Add to Home screen”.';
+      el.className='show';
+    }
+  })();
+
+  if('serviceWorker' in navigator){
+    window.addEventListener('load',function(){
+      navigator.serviceWorker.register('./sw.js').catch(function(){});
+    });
+  }
+
+  render();
+})();
+</script>
+</body>
+</html>
