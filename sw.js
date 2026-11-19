@@ -1,5 +1,5 @@
 /* Flyer Calendar service worker */
-const CACHE = 'flyercal-v2';
+const CACHE = 'flyercal-v3';
 const PRECACHE = [
   './',
   './index.html',
@@ -28,41 +28,18 @@ self.addEventListener('fetch', (event) => {
   if (req.method !== 'GET') return;
 
   const url = new URL(req.url);
-  const sameOrigin = url.origin === self.location.origin;
-  const isTesseract = /cdn\.jsdelivr\.net\/npm\/tesseract/.test(url.href)
-    || /cdn\.jsdelivr\.net\/npm\/@?tesseract/.test(url.href)
-    || url.hostname === 'cdn.jsdelivr.net';
+  if (url.origin !== self.location.origin) return;
 
-  // App shell: prefer cache, fall back to network
-  if (sameOrigin) {
-    event.respondWith(
-      caches.match(req).then((cached) => {
-        const fetchPromise = fetch(req).then((res) => {
-          if (res && res.ok) {
-            const copy = res.clone();
-            caches.open(CACHE).then((cache) => cache.put(req, copy));
-          }
-          return res;
-        }).catch(() => cached);
-        return cached || fetchPromise;
-      })
-    );
-    return;
-  }
-
-  // OCR CDN: cache after first successful fetch so later reads work offline
-  if (isTesseract) {
-    event.respondWith(
-      caches.match(req).then((cached) => {
-        if (cached) return cached;
-        return fetch(req).then((res) => {
-          if (res && res.ok) {
-            const copy = res.clone();
-            caches.open(CACHE).then((cache) => cache.put(req, copy));
-          }
-          return res;
-        });
-      })
-    );
-  }
+  event.respondWith(
+    caches.match(req).then((cached) => {
+      const fetchPromise = fetch(req).then((res) => {
+        if (res && res.ok) {
+          const copy = res.clone();
+          caches.open(CACHE).then((cache) => cache.put(req, copy));
+        }
+        return res;
+      }).catch(() => cached);
+      return cached || fetchPromise;
+    })
+  );
 });

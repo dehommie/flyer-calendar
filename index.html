@@ -21,8 +21,10 @@ html{scroll-padding-top:env(safe-area-inset-top,0px)}
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif}
 main{max-width:720px;margin:0 auto;padding:20px 16px 48px}
-h1{font-size:1.5rem;margin:0 0 4px}
+.top{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:4px}
+h1{font-size:1.5rem;margin:0}
 .sub{color:var(--mute);margin:0 0 16px}
+.iconbtn{font:inherit;color:var(--ink);background:var(--card);border:1px solid var(--line);border-radius:10px;padding:8px 12px;cursor:pointer;flex-shrink:0}
 .drop{display:block;border:2px dashed var(--line);border-radius:14px;padding:22px;text-align:center;background:var(--card);cursor:pointer}
 .drop.over{border-color:var(--acc);background:var(--soft)}
 .drop b{color:var(--acc)}
@@ -50,22 +52,30 @@ h3{font-size:1rem;margin:22px 0 8px}
 .acts{display:flex;gap:6px;flex-shrink:0}
 .acts button{padding:4px 10px;font-size:.85rem}
 .empty{color:var(--mute);font-size:.92rem}
-dialog{border:1px solid var(--line);border-radius:14px;background:var(--card);color:var(--ink);padding:18px;width:min(92vw,400px)}
+dialog{border:1px solid var(--line);border-radius:14px;background:var(--card);color:var(--ink);padding:18px;width:min(92vw,420px)}
 dialog::backdrop{background:rgba(0,0,0,.45)}
 label{display:block;font-size:.82rem;color:var(--mute);margin-top:10px}
-input[type=text],input[type=date],input[type=time]{width:100%;font:inherit;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:8px}
+input[type=text],input[type=date],input[type=time],input[type=password]{width:100%;font:inherit;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:8px}
 .row{display:flex;gap:10px}.row>div{flex:1}
-.btns{display:flex;gap:8px;justify-content:flex-end;margin-top:16px}
+.btns{display:flex;gap:8px;justify-content:flex-end;margin-top:16px;flex-wrap:wrap}
+.hint{font-size:.85rem;color:var(--mute);margin:8px 0 0;line-height:1.4}
+.hint a{color:var(--acc)}
+#setup{display:none;margin:0 0 14px;padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:var(--soft);color:var(--ink);font-size:.9rem}
+#setup.show{display:block}
 #install{display:none;margin:0 0 14px;padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:var(--card);color:var(--mute);font-size:.9rem}
 #install.show{display:block}
-#install b{color:var(--ink)}
+#install b,#setup b{color:var(--ink)}
 @media (display-mode:standalone),(display-mode:fullscreen){#install{display:none!important}}
 </style>
 </head>
 <body>
 <main>
-  <h1>Flyer Calendar</h1>
-  <p class="sub">Drop in flyer screenshots. Text is read in your browser and added to the calendar.</p>
+  <div class="top">
+    <h1>Flyer Calendar</h1>
+    <button type="button" class="iconbtn" id="settingsBtn" aria-label="Settings">Settings</button>
+  </div>
+  <p class="sub">Drop in flyer screenshots. Gemini reads the event and adds it to your calendar.</p>
+  <div id="setup"></div>
   <div id="install"></div>
   <label class="drop" id="drop">
     <input type="file" id="file" accept="image/*" multiple>
@@ -99,13 +109,28 @@ input[type=text],input[type=date],input[type=time]{width:100%;font:inherit;color
   <div class="btns"><button id="cancel">Cancel</button><button class="p" id="save">Save</button></div>
 </dialog>
 
-<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+<dialog id="settings">
+  <div style="font-weight:600">Gemini API key</div>
+  <p class="hint">Get a free key at <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">Google AI Studio</a>. Stored only on this device.</p>
+  <label>API key<input type="password" id="f-key" autocomplete="off" spellcheck="false" placeholder="AIza…"></label>
+  <div class="btns">
+    <button type="button" id="clearKey">Clear</button>
+    <button type="button" id="cancelSettings">Cancel</button>
+    <button type="button" class="p" id="saveKey">Save</button>
+  </div>
+</dialog>
+
 <script>
 (function(){
   var KEY='flyercal:events';
+  var API_KEY_STORE='flyercal:geminiKey';
+  var GEMINI_MODEL='gemini-3.5-flash-lite';
   var events=[];
   try{events=JSON.parse(localStorage.getItem(KEY)||'[]')||[];}catch(e){events=[];}
   function persist(){try{localStorage.setItem(KEY,JSON.stringify(events));}catch(e){}}
+  function getApiKey(){try{return localStorage.getItem(API_KEY_STORE)||'';}catch(e){return '';}}
+  function setApiKey(v){try{if(v)localStorage.setItem(API_KEY_STORE,v);else localStorage.removeItem(API_KEY_STORE);}catch(e){}}
+
   var now=new Date();
   var view=new Date(now.getFullYear(),now.getMonth(),1);
   var sel=null, editing=null;
@@ -124,6 +149,13 @@ input[type=text],input[type=date],input[type=time]{width:100%;font:inherit;color
       '<div class="acts"><button data-edit="'+e.id+'">Edit</button><button data-del="'+e.id+'">Delete</button></div></div>';
   }
   function sortEv(a,b){return (a.date+(a.start||'')).localeCompare(b.date+(b.start||''));}
+
+  function updateSetupBanner(){
+    var el=$('setup');
+    if(getApiKey()){el.className='';el.innerHTML='';return;}
+    el.className='show';
+    el.innerHTML='<b>Add your free Gemini key</b> to read flyers. Tap Settings, then get a key from Google AI Studio.';
+  }
 
   function render(){
     $('mt').textContent=view.toLocaleDateString(undefined,{month:'long',year:'numeric'});
@@ -148,6 +180,7 @@ input[type=text],input[type=date],input[type=time]{width:100%;font:inherit;color
     }
     var und=events.filter(function(e){return !e.date;});
     $('undated').innerHTML=und.length?'<h3>Needs a date</h3>'+und.map(evHTML).join(''):'';
+    updateSetupBanner();
   }
 
   $('grid').addEventListener('click',function(ev){
@@ -179,273 +212,133 @@ input[type=text],input[type=date],input[type=time]{width:100%;font:inherit;color
     $('dlg').close();
   };
 
-  /* ---------- flyer reading (local OCR) ---------- */
-  var MONTHS={january:0,jan:0,february:1,feb:1,march:2,mar:2,april:3,apr:3,may:4,june:5,jun:5,july:6,jul:6,august:7,aug:7,september:8,sept:8,sep:8,october:9,oct:9,november:10,nov:10,december:11,dec:11};
-  var MONTH_RE='(?:January|February|March|April|May|June|July|August|September|October|November|December|Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:t(?:ember)?)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)';
-  var DOW_RE='(?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday|Mon|Tue|Wed|Thu|Fri|Sat|Sun)';
-  var STATES='Alabama|Alaska|Arizona|Arkansas|California|Colorado|Connecticut|Delaware|Florida|Georgia|Hawaii|Idaho|Illinois|Indiana|Iowa|Kansas|Kentucky|Louisiana|Maine|Maryland|Massachusetts|Michigan|Minnesota|Mississippi|Missouri|Montana|Nebraska|Nevada|New Hampshire|New Jersey|New Mexico|New York|North Carolina|North Dakota|Ohio|Oklahoma|Oregon|Pennsylvania|Rhode Island|South Carolina|South Dakota|Tennessee|Texas|Utah|Vermont|Virginia|Washington|West Virginia|Wisconsin|Wyoming|ILLINOIS|MISSOURI|MICHIGAN|OHIO|TEXAS|FLORIDA|GEORGIA|CALIFORNIA|NEW YORK';
-  var KNOWN_CITIES=['ST. LOUIS','ST LOUIS','SAINT LOUIS','CHICAGO','DETROIT','ATLANTA','NASHVILLE','HOUSTON','DALLAS','AUSTIN','MIAMI','ORLANDO','TAMPA','PHILADELPHIA','BOSTON','SEATTLE','DENVER','PHOENIX','PORTLAND','MEMPHIS','NEW ORLEANS','CHARLOTTE','INDIANAPOLIS','COLUMBUS','CLEVELAND','PITTSBURGH','BALTIMORE','WASHINGTON','LOS ANGELES','SAN FRANCISCO','SAN DIEGO','MINNEAPOLIS','KANSAS CITY','OKLAHOMA CITY','LAS VEGAS','BROOKLYN','MANHATTAN'];
+  $('settingsBtn').onclick=function(){
+    $('f-key').value=getApiKey();
+    $('settings').showModal();
+  };
+  $('cancelSettings').onclick=function(){$('settings').close();};
+  $('clearKey').onclick=function(){setApiKey('');$('f-key').value='';updateSetupBanner();};
+  $('saveKey').onclick=function(){
+    setApiKey($('f-key').value.trim());
+    $('settings').close();
+    updateSetupBanner();
+  };
 
-  function loadImage(file){
+  /* ---------- Gemini flyer reading ---------- */
+  function line(msg,cls){var d=document.createElement('div');d.className=cls||'';d.textContent=msg;$('status').appendChild(d);return d;}
+
+  function shrink(file){
     return new Promise(function(res,rej){
       var img=new Image(),url=URL.createObjectURL(file);
-      img.onload=function(){URL.revokeObjectURL(url);res(img);};
+      img.onload=function(){
+        var s=Math.min(1,1600/Math.max(img.width,img.height)),c=document.createElement('canvas');
+        c.width=Math.max(1,Math.round(img.width*s));c.height=Math.max(1,Math.round(img.height*s));
+        c.getContext('2d').drawImage(img,0,0,c.width,c.height);
+        URL.revokeObjectURL(url);
+        c.toBlob(function(b){res(b||file);},'image/jpeg',0.85);
+      };
       img.onerror=function(){URL.revokeObjectURL(url);rej(new Error('Could not open image'));};
       img.src=url;
     });
   }
-  function canvasToBlob(c,q){
-    return new Promise(function(res){c.toBlob(function(b){res(b);},'image/jpeg',q||0.9);});
-  }
-  function prepRegion(img,opts){
-    var tw=img.naturalWidth||img.width,th=img.naturalHeight||img.height;
-    var top=Math.round(th*(opts.top||0)), bot=Math.round(th*(opts.bot||0));
-    var left=Math.round(tw*(opts.left||0)), right=Math.round(tw*(opts.right||0));
-    var sw=Math.max(1,tw-left-right), sh=Math.max(1,th-top-bot);
-    if(opts.sliceTop!=null){var st=Math.round(sh*opts.sliceTop), sh2=Math.round(sh*(opts.sliceH||0.5)); top+=st; sh=Math.max(1,sh2);}
-    var scale=opts.scale||2;
-    var c=document.createElement('canvas');
-    c.width=Math.round(sw*scale); c.height=Math.round(sh*scale);
-    var ctx=c.getContext('2d');
-    ctx.imageSmoothingEnabled=true;
-    ctx.drawImage(img,left,top,sw,sh,0,0,c.width,c.height);
-    var id=ctx.getImageData(0,0,c.width,c.height),d=id.data,i,gray,v;
-    for(i=0;i<d.length;i+=4){
-      gray=0.299*d[i]+0.587*d[i+1]+0.114*d[i+2];
-      v=((gray-128)*1.55)+128;
-      if(v<0)v=0;if(v>255)v=255;
-      d[i]=d[i+1]=d[i+2]=v;
-    }
-    ctx.putImageData(id,0,0);
-    return canvasToBlob(c,0.92);
-  }
-  async function prepareVariants(file){
-    var img=await loadImage(file);
-    var tall=(img.naturalHeight||img.height)/(img.naturalWidth||img.width)>1.4;
-    var top=tall?0.17:0.04, bot=tall?0.13:0.04;
-    return Promise.all([
-      prepRegion(img,{top:top,bot:bot,scale:2}),
-      prepRegion(img,{top:top,bot:bot,sliceTop:0.42,sliceH:0.5,scale:2.4})
-    ]);
-  }
-  function line(msg,cls){var d=document.createElement('div');d.className=cls||'';d.textContent=msg;$('status').appendChild(d);return d;}
-
-  function to24(h,m,ampm){
-    h=+h;m=m==null||m===''?0:+m;
-    if(ampm){
-      ampm=ampm.toLowerCase();
-      if(ampm.charAt(0)==='p'&&h<12)h+=12;
-      if(ampm.charAt(0)==='a'&&h===12)h=0;
-    }
-    return String(h).padStart(2,'0')+':'+String(m).padStart(2,'0');
-  }
-  function nextOccurrence(month,day,year){
-    var y=year!=null?year:now.getFullYear();
-    var d=new Date(y,month,day);
-    if(year==null&&iso(d)<today)d=new Date(y+1,month,day);
-    if(d.getMonth()!==month||d.getDate()!==day)return '';
-    return iso(d);
-  }
-  function parseTimeToken(s){
-    var m=String(s).trim().match(/^(\d{1,2})(?::(\d{2}))?\s*(a\.?m\.?|p\.?m\.?)?$/i);
-    if(!m)return '';
-    var h=+m[1],mm=m[2]||'0',ap=m[3];
-    if(!ap)return '';
-    if(h<1||h>12)return '';
-    return to24(h,mm,ap);
-  }
-  function extractTimes(text){
-    var start='',end='';
-    var range=text.match(/(\d{1,2}(?::\d{2})?\s*(?:a\.?m\.?|p\.?m\.?)?)\s*[-–—to]+\s*(\d{1,2}(?::\d{2})?\s*(?:a\.?m\.?|p\.?m\.?))/i);
-    if(range){
-      var a=range[1],b=range[2];
-      if(!/a\.?m\.?|p\.?m\.?/i.test(a)&&/a\.?m\.?|p\.?m\.?/i.test(b))a=a+' '+b.match(/a\.?m\.?|p\.?m\.?/i)[0];
-      start=parseTimeToken(a);end=parseTimeToken(b);
-      return {start:start,end:end};
-    }
-    var single=text.match(/\b(\d{1,2}(?::\d{2})?\s*(?:a\.?m\.?|p\.?m\.?))\b/i);
-    if(single)start=parseTimeToken(single[1]);
-    return {start:start,end:end};
-  }
-  function monthKey(s){return String(s).toLowerCase().replace(/\./g,'').slice(0,3);}
-  function extractAllDates(text){
-    var out=[], re=new RegExp('\\b('+MONTH_RE+')\\.?\\s+(\\d{1,2})(?:st|nd|rd|th)?\\b','gi'),m;
-    while((m=re.exec(text))){
-      var mk=monthKey(m[1]), month=MONTHS[mk];
-      if(month==null)continue;
-      var date=nextOccurrence(month,+m[2],null);
-      if(date)out.push({date:date,index:m.index,raw:m[0]});
-    }
-    var seen={};
-    return out.filter(function(d){if(seen[d.date])return false;seen[d.date]=1;return true;});
-  }
-  function isChromeLine(s){
-    s=String(s||'');
-    if(!s||s.length<2)return true;
-    if(/^(www\.|https?:|instagram|facebook|tiktok|threads|your story|follow|sponsored|liked by|view insights)/i.test(s))return true;
-    if(/\b(housefires|spotify|apple music|mercy\s*\/?\s*tremble)\b/i.test(s))return true;
-    if(/^[A-Za-z0-9._]{2,20}(\s+[A-Za-z0-9._]{2,20}){1,4}$/.test(s)&&/\./.test(s)&&s.length<50)return true;
-    if(/^\d{1,2}:\d{2}/.test(s)&&!/[ap]\.?m\.?/i.test(s))return true;
-    if(/^[^\w]*$/.test(s))return true;
-    if((s.match(/[^A-Za-z0-9\s.,'&:-]/g)||[]).length>Math.max(2,s.length*0.35))return true;
-    return false;
-  }
-  function letterScore(s){
-    var letters=(s.match(/[A-Za-z]/g)||[]).length;
-    return letters/Math.max(1,s.length);
-  }
-  function titleCaseWords(s){
-    return s.replace(/\s+/g,' ').trim().replace(/\b[A-Za-z][A-Za-z']*/g,function(w){
-      if(w.length<=2&&w===w.toUpperCase())return w;
-      return w.charAt(0).toUpperCase()+w.slice(1).toLowerCase();
+  function blobToBase64(blob){
+    return new Promise(function(res,rej){
+      var r=new FileReader();
+      r.onload=function(){
+        var s=String(r.result||'');
+        var i=s.indexOf(',');
+        res(i>=0?s.slice(i+1):s);
+      };
+      r.onerror=function(){rej(new Error('Could not read image'));};
+      r.readAsDataURL(blob);
     });
   }
-  function extractTitle(lines,full){
-    var cands=[],i,l,norm;
-    for(i=0;i<lines.length;i++){
-      l=lines[i].replace(/^[#*\-•\s]+/,'').trim();
-      if(isChromeLine(l)||looksLikeDateLine(l))continue;
-      if(/^(at|@|venue|location|doors|admission|free|rsvp|tickets?|and)\b/i.test(l))continue;
-      if(new RegExp('\\b(?:'+STATES+')\\b','i').test(l)&&l.length<40)continue;
-      if(KNOWN_CITIES.some(function(c){return l.toUpperCase().indexOf(c)>=0;})&&l.length<40)continue;
-      if(letterScore(l)<0.55||l.length<4)continue;
-      norm=l.replace(/[^A-Za-z\s']/g,' ').replace(/\s+/g,' ').trim();
-      if(norm.length<4)continue;
-      cands.push(norm);
-    }
-    if(!cands.length){
-      var m=full.match(/unscripted\s+christmas/i)||full.match(/[A-Z]{3,}(?:\s+[A-Z]{3,}){0,4}\s+CHRISTMAS/);
-      if(m)return titleCaseWords(m[0]);
-      return '';
-    }
-    var joined=[];
-    for(i=0;i<Math.min(cands.length,4);i++){
-      var w=cands[i];
-      if(joined.join(' ').length+w.length>48)break;
-      if(joined.some(function(x){return x.toLowerCase().indexOf(w.toLowerCase())>=0||w.toLowerCase().indexOf(x.toLowerCase())>=0;}))continue;
-      joined.push(w);
-      if(/christmas|tour|concert|live|festival|night|worship|gospel/i.test(w))break;
-    }
-    return titleCaseWords(joined.join(' ')).slice(0,80);
+  function parseJSON(t){
+    t=String(t||'').replace(/```json|```/g,'').trim();
+    var a=t.search(/[\[{]/);if(a<0)throw new Error('no json');
+    var v=JSON.parse(t.slice(a));return Array.isArray(v)?v:[v];
   }
-  function looksLikeDateLine(s){
-    return new RegExp('\\b(?:'+MONTH_RE+')\\.?\\s+\\d{1,2}\\b','i').test(s)
-      ||new RegExp('^\\s*(?:'+DOW_RE+')\\b','i').test(s);
-  }
-  function findCities(text){
-    var up=text.toUpperCase().replace(/[|]/g,' ').replace(/\s+/g,' ');
-    var found=[],i,c,idx;
-    for(i=0;i<KNOWN_CITIES.length;i++){
-      c=KNOWN_CITIES[i];
-      idx=up.indexOf(c);
-      if(idx>=0)found.push({city:titleCaseWords(c.replace(/\bSt\b/i,'St.')),index:idx,key:c});
-    }
-    found.sort(function(a,b){return a.index-b.index;});
-    var uniq=[],seen={};
-    found.forEach(function(f){
-      var k=f.city.toLowerCase().replace(/\./g,'');
-      if(seen[k]||seen[k.replace(/^saint /,'st ')]||seen[k.replace(/^st /,'saint ')])return;
-      seen[k]=1;uniq.push(f);
-    });
-    return uniq;
-  }
-  function findStatesNear(text){
-    var re=new RegExp('\\b('+STATES+')\\b','gi'),m,out=[];
-    while((m=re.exec(text)))out.push(titleCaseWords(m[1]));
-    return out;
-  }
-  function extractLocation(lines,full){
-    var i,m,l;
-    for(i=0;i<lines.length;i++){
-      l=lines[i];
-      m=l.match(/\b(?:at|venue|location)\s*[:\-]?\s*(.+)$/i);
-      if(m&&m[1].trim().length>2&&!isChromeLine(m[1]))return m[1].replace(/^the\s+/i,'').trim();
-    }
-    var cities=findCities(full);
-    if(cities.length===1){
-      var states=findStatesNear(full);
-      return states[0]?cities[0].city+', '+states[0]:cities[0].city;
-    }
-    for(i=0;i<lines.length;i++){
-      l=lines[i];
-      if(/\d{1,5}\s+[A-Za-z].+\b(?:St|Street|Ave|Avenue|Rd|Road|Blvd|Boulevard|Dr|Drive|Ln|Lane|Way|Court|Ct)\b/i.test(l))return l.trim();
-      if(/\b(?:Hall|Center|Centre|Theatre|Theater|Church|Park|Museum|Library|Cafe|Café|Bar|Club|Arena|Stadium|Gallery|Plaza|Room)\b/i.test(l)
-        &&!looksLikeDateLine(l)&&!isChromeLine(l)&&l.length<80)return l.trim();
-    }
-    return '';
-  }
-  function parseFlyerText(text){
-    text=String(text||'').replace(/\r/g,'\n').replace(/[|]+/g,' ').replace(/[ \t]+/g,' ');
-    var lines=text.split('\n').map(function(l){return l.trim();}).filter(function(l){return l.length>1&&!isChromeLine(l);});
-    var full=lines.join('\n');
-    var times=extractTimes(full);
-    var title=extractTitle(lines,text);
-    var dates=extractAllDates(text);
-    var cities=findCities(text);
-    var states=findStatesNear(text);
-
-    if(dates.length>=2){
-      return dates.map(function(d,i){
-        var loc='';
-        if(cities[i])loc=cities[i].city+(states[i]?', '+states[i]:'');
-        else if(cities.length===1)loc=cities[0].city;
-        return {title:title||'Untitled event',date:d.date,start:times.start,end:times.end,location:loc};
-      });
-    }
-    if(dates.length===1){
-      var loc=extractLocation(lines,full);
-      if(!loc&&cities[0])loc=cities[0].city+(states[0]?', '+states[0]:'');
-      return [{title:title||'Untitled event',date:dates[0].date,start:times.start,end:times.end,location:loc}];
-    }
-    var date='',loc=extractLocation(lines,full);
-    if(cities[0]&&!loc)loc=cities[0].city+(states[0]?', '+states[0]:'');
-    if(!title&&!date&&!loc)return [];
-    if(!title)title='Untitled event';
-    return [{title:title,date:date,start:times.start,end:times.end,location:loc}];
+  function normalizeEvent(x){
+    if(!x||typeof x!=='object')return null;
+    var title=String(x.title||'').trim();
+    var date=String(x.date||'').trim();
+    var start=String(x.start||'').trim();
+    var end=String(x.end||'').trim();
+    var location=String(x.location||'').trim();
+    if(!/^\d{4}-\d{2}-\d{2}$/.test(date))date='';
+    if(!/^\d{2}:\d{2}$/.test(start))start='';
+    if(!/^\d{2}:\d{2}$/.test(end))end='';
+    if(!title&&!date)return null;
+    return {title:title,date:date,start:start,end:end,location:location};
   }
 
-  async function ocrBlob(blob){
-    var result=await Tesseract.recognize(blob,'eng',{
-      tessedit_pageseg_mode:'6'
-    });
-    return (result&&result.data&&result.data.text)||'';
-  }
-  async function ocrImage(blobs,row){
-    if(typeof Tesseract==='undefined')throw new Error('OCR library failed to load. Check your network connection.');
-    var texts=[],i;
-    for(i=0;i<blobs.length;i++){
-      if(row)row.textContent=row.dataset.base+' ('+(i+1)+'/'+blobs.length+')';
-      texts.push(await ocrBlob(blobs[i]));
+  async function readWithGemini(blob,apiKey){
+    var b64=await blobToBase64(blob);
+    var prompt='Today is '+today+'. This image is an event flyer or screenshot of one (ignore phone status bars, Instagram/Facebook UI, stories, music stickers, and nav bars). '+
+      'Extract every distinct event date shown. Reply with ONLY JSON (no markdown): either one object or an array of objects with this shape: '+
+      '{"title":string,"date":"YYYY-MM-DD" or null,"start":"HH:MM" (24-hour) or null,"end":"HH:MM" or null,"location":string}. '+
+      'If the flyer shows no year, use the next occurrence of that date on or after today. '+
+      'For tour posters with multiple cities/dates, return one object per stop. '+
+      'Use null when unsure; never invent a date, time, or location. Prefer artist + show name for title when both appear.';
+
+    var url='https://generativelanguage.googleapis.com/v1beta/models/'+GEMINI_MODEL+':generateContent?key='+encodeURIComponent(apiKey);
+    var body={
+      contents:[{parts:[
+        {text:prompt},
+        {inline_data:{mime_type:'image/jpeg',data:b64}}
+      ]}],
+      generationConfig:{
+        temperature:0.2,
+        responseMimeType:'application/json'
+      }
+    };
+    var resp=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    var data=await resp.json().catch(function(){return {};});
+    if(!resp.ok){
+      var msg=(data.error&&data.error.message)||('Gemini error '+resp.status);
+      if(resp.status===400&&/API key/i.test(msg))throw new Error('Invalid API key. Check Settings.');
+      if(resp.status===403)throw new Error('API key blocked or restricted. Check Google AI Studio.');
+      if(resp.status===429)throw new Error('Rate limited. Wait a moment and try again.');
+      throw new Error(msg);
     }
-    return texts.join('\n');
+    var text='';
+    try{
+      text=data.candidates[0].content.parts.map(function(p){return p.text||'';}).join('');
+    }catch(e){throw new Error('No response from Gemini.');}
+    return parseJSON(text).map(normalizeEvent).filter(Boolean);
   }
 
   async function handle(files){
     files=Array.prototype.filter.call(files,function(f){return /^image\//.test(f.type);});
     if(!files.length)return;
     $('status').innerHTML='';
+    var apiKey=getApiKey();
+    if(!apiKey){
+      line('Add your free Gemini API key in Settings first.','bad');
+      $('settingsBtn').click();
+      return;
+    }
     for(var i=0;i<files.length;i++){
-      var row=line('Reading '+files[i].name+'…');
-      row.dataset.base='Reading '+files[i].name+'…';
+      var row=line('Reading '+files[i].name+' with Gemini…');
       try{
-        var blobs=await prepareVariants(files[i]);
-        var text=await ocrImage(blobs,row);
-        var found=parseFlyerText(text),added=0,firstId=null;
+        var blob=await shrink(files[i]);
+        var found=await readWithGemini(blob,apiKey),added=0;
         found.forEach(function(x){
-          if(!x||(!x.title&&!x.date))return;
-          var id='e'+Date.now()+Math.random().toString(36).slice(2,6);
-          if(!firstId)firstId=id;
-          events.push({id:id,title:x.title||'',date:/^\d{4}-\d{2}-\d{2}$/.test(x.date||'')?x.date:'',start:x.start||'',end:x.end||'',location:x.location||''});
+          events.push({id:'e'+Date.now()+Math.random().toString(36).slice(2,6),title:x.title||'',date:x.date||'',start:x.start||'',end:x.end||'',location:x.location||''});
           added++;
         });
         if(added){
-          persist();row.className='ok';
-          row.textContent='Added '+added+' event'+(added>1?'s':'')+' from '+files[i].name+' — check Edit if anything looks off.';
-          var last=events.filter(function(e){return e.date;}).sort(sortEv).slice(-1)[0]||events[events.length-1];
+          persist();
+          row.className='ok';
+          row.textContent='Added '+added+' event'+(added>1?'s':'')+' from '+files[i].name;
+          var dated=events.filter(function(e){return e.date;}).sort(sortEv);
+          var last=dated[dated.length-1]||events[events.length-1];
           if(last&&last.date){var d=parseISO(last.date);view=new Date(d.getFullYear(),d.getMonth(),1);}
           sel=null;render();
-          if(firstId)openEdit(firstId);
-        }else{row.className='bad';row.textContent='No event found in '+files[i].name+'. Try a clearer screenshot of just the flyer.';}
+        }else{
+          row.className='bad';
+          row.textContent='No event found in '+files[i].name+'.';
+        }
       }catch(err){
         row.className='bad';
         row.textContent=(err&&err.message)||('Couldn’t read '+files[i].name+'. Try again.');
@@ -458,7 +351,6 @@ input[type=text],input[type=date],input[type=time]{width:100%;font:inherit;color
   ['dragleave','drop'].forEach(function(n){drop.addEventListener(n,function(e){e.preventDefault();drop.classList.remove('over');});});
   drop.addEventListener('drop',function(e){handle(e.dataTransfer.files);});
 
-  /* ---------- PWA install hint ---------- */
   (function(){
     var el=$('install');
     var standalone=window.matchMedia('(display-mode: standalone)').matches
